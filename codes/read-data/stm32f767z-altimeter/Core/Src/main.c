@@ -76,14 +76,14 @@ UART_HandleTypeDef huart3;
 PCD_HandleTypeDef hpcd_USB_OTG_FS;
 
 /* USER CODE BEGIN PV */
-int _write(int file, char *ptr, int len)
-{
-  /* Implement your write code here, this is used by puts and printf for example */
-  int i=0;
-  for(i=0 ; i<len ; i++)
-    ITM_SendChar((*ptr++));
-  return len;
-}
+//int _write(int file, char *ptr, int len)
+//{
+//  /* Implement your write code here, this is used by puts and printf for example */
+//  int i=0;
+//  for(i=0 ; i<len ; i++)
+//    ITM_SendChar((*ptr++));
+//  return len;
+//}
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -163,15 +163,17 @@ int main(void)
   i2cTxBuff=0x07;
   HAL_I2C_Mem_Write(&hi2c1, MPL3115A2_DEV_ADDR, MPL3115A2_REG_PT_DATA_CFG, 1, &i2cTxBuff, 1, 100);
 
-  i2cTxBuff=0x80;
+  i2cTxBuff=0x80; // Data Ready interrupt enabled
   HAL_I2C_Mem_Write(&hi2c1, MPL3115A2_DEV_ADDR, MPL3115A2_REG_CTRL_REG4, 1, &i2cTxBuff, 1, 100);
 
-  i2cTxBuff=0x80;
+  i2cTxBuff=0x80; // Interrupt is routed to INT1
   HAL_I2C_Mem_Write(&hi2c1, MPL3115A2_DEV_ADDR, MPL3115A2_REG_CTRL_REG5, 1, &i2cTxBuff, 1, 100);
 
   // put sensor to ACTIVE mode
-  i2cTxBuff=0xA1;
+//  i2cTxBuff=0xB9; // altitude mode
+  i2cTxBuff=0x39; // barometer mode
   HAL_I2C_Mem_Write(&hi2c1, MPL3115A2_DEV_ADDR, MPL3115A2_REG_CTRL_REG1, 1, &i2cTxBuff, 1, 100);
+
 
   //read system mode
   HAL_I2C_Mem_Read(&hi2c1, MPL3115A2_DEV_ADDR, MPL3115A2_REG_SYSMOD, 1, &i2cRxBuff[1], 1, 100);
@@ -185,19 +187,37 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-	  HAL_GPIO_TogglePin(LD1_GPIO_Port, LD1_Pin);
-	  HAL_Delay(50);
+//	  HAL_Delay(50);
 
-	  // read all data at once
-	  if (HAL_I2C_Mem_Read(&hi2c1, MPL3115A2_DEV_ADDR, MPL3115A2_REG_OUT_P_MSB, 1, i2cRxBuff, 5, 100) == HAL_OK) {
+	  if (HAL_GPIO_ReadPin(INT_GPIO_Port, INT_Pin) != GPIO_PIN_SET) {
+		  // read all data at once
+		  HAL_GPIO_WritePin(LD3_GPIO_Port, LD3_Pin, GPIO_PIN_SET);
+		  if (HAL_I2C_Mem_Read(&hi2c1, MPL3115A2_DEV_ADDR, MPL3115A2_REG_OUT_P_MSB, 1, i2cRxBuff, 5, 100) == HAL_OK) {
 
-		  pData = i2cRxBuff[0]<<24 | i2cRxBuff[1]<<16 | i2cRxBuff[2] << 8;
-		  pData_f = pData / 65536;
+			  /* altitude */
+//			  pData = i2cRxBuff[0]<<24 | i2cRxBuff[1]<<16 | i2cRxBuff[2]<<8;
+//			  pData_f = pData / 65536;
 
-		  tData = i2cRxBuff[3]<<8 | i2cRxBuff[4];
-		  tData_f = tData / 256;
+			  /* pressure */
+			  pData = i2cRxBuff[0]<<16 | i2cRxBuff[1]<<8 | i2cRxBuff[2]<<8;
+			  pData_f = pData / 64;
+
+			  sprintf(uartTxBuff, "baro: %f\r\n", pData_f);
+			  HAL_UART_Transmit(&huart3, (uint8_t *) uartTxBuff, strlen(uartTxBuff), 100);
+
+			  tData = i2cRxBuff[3]<<8 | i2cRxBuff[4];
+			  tData_f = tData / 256;
+
+//			  sprintf(uartTxBuff, "temp: %f\r\n", tData_f);
+//			  HAL_UART_Transmit(&huart3, (uint8_t *) uartTxBuff, strlen(uartTxBuff), 100);
+
+			  HAL_GPIO_TogglePin(LD1_GPIO_Port, LD1_Pin);
+
+		  }
+		  HAL_GPIO_WritePin(LD3_GPIO_Port, LD3_Pin, GPIO_PIN_RESET);
 
 	  }
+
 
 //	  //read system mode
 //	  HAL_I2C_Mem_Read(&hi2c1, MPL3115A2_DEV_ADDR, MPL3115A2_REG_SYSMOD, 1, &i2cRxBuff[1], 1, 100);
@@ -454,6 +474,12 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(USER_Btn_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : INT_Pin */
+  GPIO_InitStruct.Pin = INT_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(INT_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pins : LD1_Pin LD3_Pin LD2_Pin */
   GPIO_InitStruct.Pin = LD1_Pin|LD3_Pin|LD2_Pin;
